@@ -1,0 +1,4 @@
+package org.nko.chat.models
+
+class MessageContent {
+}

@@ -1,0 +1,110 @@
+package org.nko.chat.ui
+
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import org.nko.chat.models.Message
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import org.nko.chat.services.AuthService
+
+@Composable
+fun MessageList(messages: List<Message>, isGroup: Boolean) {
+
+    fun formatDate(date: String): String {
+        val msgDateTime = LocalDateTime.parse(date, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
+        val msgDate = msgDateTime.toLocalDate()
+
+        val today = LocalDate.now()
+        val yesterday = today.minusDays(1)
+
+        return when {
+            msgDate == today -> "HOY"
+            msgDate == yesterday -> "AYER"
+            msgDate.isAfter(today.minusDays(7)) -> msgDate.dayOfWeek
+                .getDisplayName(TextStyle.FULL, Locale("es", "ES"))
+                .uppercase()
+            else -> msgDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+        }
+    }
+
+    val listState = rememberLazyListState()
+
+    // Desplazarse al final de la lista cuando se carga
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(top = 16.dp)
+    ) {
+        var lastDate: String? = null
+        var lastSenderId: Int? = null
+
+        items(messages) { msg ->
+
+            val isConsecutive = msg.user.id == lastSenderId
+            println("sendId: ${msg.user.id}, lastSenderId: $lastSenderId, isConsecutive: $isConsecutive")
+
+            lastSenderId = msg.user.id
+
+            val formattedDate = formatDate(msg.date)
+
+            if (formattedDate != lastDate) {
+                lastDate = formattedDate
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                        .background(Color.Transparent)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                shape = MaterialTheme.shapes.medium
+                            )
+                            .padding(vertical = 4.dp, horizontal = 8.dp)
+                    ) {
+                        Text(
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                            text = formattedDate
+                        )
+                    }
+                }
+            }
+
+            MessageItem(
+                message = msg,
+                isGroup = isGroup,
+                isSender = msg.user.id == AuthService().getUserLocally()!!.id,
+                isConsecutive = isConsecutive
+            )
+        }
+    }
+}
+
