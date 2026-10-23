@@ -19,6 +19,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.adaptivekt.components.AdaptiveAvatar
+import io.github.adaptivekt.components.AdaptiveIconButton
+import io.github.adaptivekt.components.icons.AdaptiveIcons
 import io.github.adaptivekt.core.AdaptiveColorSchemes
 import io.github.adaptivekt.core.AdaptiveTheme
 import com.onechat.validation.OneChatMavenWorkspace
@@ -60,6 +62,13 @@ fun OneChatApp() {
         )
         MaterialTheme(colors = materialColors) {
             val user = controller.account
+            OneChatBackHandler(
+                enabled = user != null && (controller.newConversation || controller.view.selectedId != null),
+                onBack = {
+                    if (controller.newConversation) controller.dismissNewConversation()
+                    else controller.back()
+                },
+            )
             Box(Modifier.fillMaxSize().background(AdaptiveTheme.colors.background)) {
                 when {
                     user == null -> AuthScreen(controller)
@@ -165,6 +174,7 @@ private fun AuthScreen(controller: OneChatController) {
                 label = { Text("Usuario") },
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp),
+                colors = oneChatFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
             if (creating && username.isNotBlank() && !SignupValidation.validUsername(username)) {
@@ -178,6 +188,7 @@ private fun AuthScreen(controller: OneChatController) {
                 visualTransformation = PasswordVisualTransformation(),
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp),
+                colors = oneChatFieldColors(),
                 modifier = Modifier.fillMaxWidth(),
             )
             if (creating && password.isNotEmpty() && !SignupValidation.validPassword(password)) {
@@ -194,6 +205,7 @@ private fun AuthScreen(controller: OneChatController) {
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
+                    colors = oneChatFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -253,7 +265,13 @@ private fun NewConversationScreen(controller: OneChatController) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            TextButton(onClick = controller::dismissNewConversation) { Text("‹ Volver") }
+            AdaptiveIconButton(onClick = controller::dismissNewConversation, size = 44.dp) {
+                AdaptiveIcons.ChevronLeft(
+                    size = 24.dp,
+                    tint = AdaptiveTheme.colors.textPrimary,
+                    contentDescription = "Volver",
+                )
+            }
             Text("Nueva conversación", color = AdaptiveTheme.colors.textPrimary,
                 style = MaterialTheme.typography.h6, fontWeight = FontWeight.Bold)
         }
@@ -271,6 +289,7 @@ private fun NewConversationScreen(controller: OneChatController) {
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
+                    colors = oneChatFieldColors(),
                     placeholder = { Text("Buscar usuario") },
                 )
                 Button(
