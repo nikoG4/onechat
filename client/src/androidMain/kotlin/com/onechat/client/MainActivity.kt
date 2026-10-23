@@ -1,6 +1,10 @@
 package com.onechat.client
 
 import android.os.Bundle
+import android.content.Intent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import android.content.res.Configuration
 import android.graphics.Color
 import androidx.activity.SystemBarStyle
@@ -18,8 +22,15 @@ import androidx.compose.ui.Modifier
 import io.github.adaptivekt.core.AdaptiveTheme
 
 class MainActivity : ComponentActivity() {
+    private var pendingConversation by mutableStateOf<String?>(null)
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingConversation = intent.getStringExtra("conversation_id")
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingConversation = intent.getStringExtra("conversation_id")
         // Let Android draw edge-to-edge, then inset interactive content away from
         // cutouts/status bar, gesture navigation and the on-screen keyboard.
         val dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -37,7 +48,10 @@ class MainActivity : ComponentActivity() {
                         .windowInsetsPadding(WindowInsets.safeDrawing)
                         .imePadding()
                 ) {
-                    OneChatApp()
+                    OneChatApp(
+                        openConversationId = pendingConversation,
+                        onConversationOpened = { pendingConversation = null },
+                    )
                 }
             }
         }
