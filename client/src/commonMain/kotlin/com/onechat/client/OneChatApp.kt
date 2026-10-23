@@ -32,7 +32,10 @@ import com.onechat.validation.OneChatMavenWorkspace
 @Composable
 fun OneChatApp() {
     val scope = rememberCoroutineScope()
-    val controller = remember(scope) { OneChatController(OneChatApi(), scope) }
+    val localStore = rememberChatLocalStore()
+    val controller = remember(scope, localStore) {
+        OneChatController(OneChatApi(), scope, localStore)
+    }
     DisposableEffect(controller) { onDispose { controller.close() } }
     val dark = isSystemInDarkTheme()
     AdaptiveTheme(colorScheme = if (dark) AdaptiveColorSchemes.defaultDark() else AdaptiveColorSchemes.defaultLight()) {
@@ -75,6 +78,16 @@ fun OneChatApp() {
                     controller.newConversation -> NewConversationScreen(controller)
                     else -> Column(Modifier.fillMaxSize()) {
                         AppHeader(username = user.username, onSignOut = controller::signOut)
+                        controller.storageWarning?.let { warning ->
+                            Text(
+                                warning,
+                                modifier = Modifier.fillMaxWidth()
+                                    .background(AdaptiveTheme.colors.dangerSubtle)
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                color = AdaptiveTheme.colors.dangerText,
+                                style = MaterialTheme.typography.caption,
+                            )
+                        }
                         Box(Modifier.weight(1f)) {
                             OneChatMavenWorkspace(
                                 state = controller.view,

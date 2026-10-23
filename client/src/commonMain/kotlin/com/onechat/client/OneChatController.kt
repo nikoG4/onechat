@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 class OneChatController(
     private val api: OneChatApi,
     private val scope: CoroutineScope,
+    private val localStore: ChatLocalStore = EphemeralChatStore(),
 ) : AutoCloseable {
     var account by mutableStateOf<ApiUser?>(null)
         private set
@@ -41,11 +42,16 @@ class OneChatController(
         private set
     var findingUser by mutableStateOf(false)
         private set
+    var storageWarning by mutableStateOf<String?>(null)
+        private set
 
     private var accessToken: String? = null
     private var epoch = 0L
     private var selectionEpoch = 0L
     private var wsJob: Job? = null
+    private var persistJob: Job? = null
+    private var storageWritable = false
+    private var knownConversations: List<ApiConversation> = emptyList()
     private val cache = mutableMapOf<String, ApiMessage>()
     private val pending = mutableMapOf<String, MessageInput>()
 
@@ -94,7 +100,12 @@ class OneChatController(
                 if (expected != epoch) return@launch
                 accessToken = response.token
                 account = response.user
+                storageWritable = false
+                storageWarning = null
                 view = OneChatView(connection = ConnectionLabel.CONNECTING, loading = true)
+                // Persisted Android cache is opened only AFTER server-authenticated login.
+                restoreLocalHistory(response.user.id, expected)
+                if (expected != epoch) return@launch
                 refresh()
                 connectRealtime(expected, response.token)
             } catch (cancelled: CancellationException) {
@@ -112,6 +123,11 @@ class OneChatController(
         selectionEpoch++
         wsJob?.cancel()
         wsJob = null
+        persistJob?.cancel()
+        persistJob = null
+        storageWritable = false
+        knownConversations = emptyList()
+        storageWarning = null
         accessToken = null
         account = null
         cache.clear()
@@ -125,6 +141,73 @@ class OneChatController(
         serverStatus = null
     }
 
+    private suspend fun restoreLocalHistory(userId: String, expected: Long) {
+        try {
+            val snapshot = localStore.restore(userId)
+            if (expected != epoch) return
+            knownConversations = snapshot.conversations
+            cache.clear()
+            snapshot.messages.forEach { cache[it.id] = it }
+            view = view.copy(
+                conversations = knownConversations.map {
+                    OneChatConversation(it.id, it.peer.username, it.preview.orEmpty())
+                },
+            )
+            updateTimeline()
+            storageWritable = true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Fail closed. Never overwrite an unreadable/corrupt local vault.
+            if (expected == epoch) {
+                storageWritable = false
+                storageWarning = "El historial local cifrado no se pudo abrir. " +
+                    "Está protegido de sobrescritura; podés seguir usando el servidor."
+            }
+        }
+    }
+
+    /** Coalesce bursts of HTTP history and WebSocket events into bounded encrypted snapshots. */
+    private fun schedulePersist() {
+        val user = account ?: return
+        if (!storageWritable) return
+        val snapshot = LocalChatSnapshot(
+            conversations = knownConversations.toList(),
+            messages = cache.values.toList(),
+        ).bounded()
+        val expected = epoch
+        persistJob?.cancel()
+        persistJob = scope.launch {
+            delay(350)
+            try {
+                localStore.save(user.id, snapshot)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (epoch == expected) {
+                    storageWritable = false
+                    storageWarning = "No se pudo guardar el historial cifrado. " +
+                        "El modo local quedó suspendido para evitar pérdida de datos."
+                }
+            }
+        }
+    }
+
+    private fun updateTimeline() {
+        val owner = account?.id
+        view = view.copy(messages = cache.values
+            .sortedWith(compareBy<ApiMessage> { it.createdAt }.thenBy { it.id })
+            .map {
+                OneChatBubble(
+                    id = it.id,
+                    conversationId = it.conversationId,
+                    body = it.body,
+                    mine = it.senderId == owner,
+                    label = if (it.senderId == owner) "Enviado" else "Recibido",
+                )
+            })
+    }
+
     fun refresh() {
         val token = accessToken ?: return
         val expected = epoch
@@ -133,6 +216,7 @@ class OneChatController(
             try {
                 val list = api.conversations(token)
                 if (epoch != expected) return@launch
+                knownConversations = list
                 view = view.copy(
                     conversations = list.map {
                         OneChatConversation(it.id, it.peer.username, it.preview.orEmpty())
@@ -140,6 +224,7 @@ class OneChatController(
                     loading = false,
                     error = null,
                 )
+                schedulePersist()
                 val selected = view.selectedId
                 if (selected != null) loadHistory(selected)
             } catch (cancelled: CancellationException) {
@@ -305,19 +390,9 @@ class OneChatController(
     }
 
     private fun mergeMessages(messages: List<ApiMessage>) {
-        val owner = account?.id
         for (message in messages) cache[message.id] = message
-        view = view.copy(messages = cache.values
-            .sortedWith(compareBy<ApiMessage> { it.createdAt }.thenBy { it.id })
-            .map {
-                OneChatBubble(
-                    id = it.id,
-                    conversationId = it.conversationId,
-                    body = it.body,
-                    mine = it.senderId == owner,
-                    label = if (it.senderId == owner) "Enviado" else "Recibido",
-                )
-            })
+        updateTimeline()
+        schedulePersist()
     }
 
     override fun close() {
