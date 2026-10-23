@@ -1,5 +1,6 @@
 package com.onechat.validation
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,13 +20,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.onechat.client.oneChatFieldColors
 import io.github.adaptivekt.components.AdaptiveAvatar
+import io.github.adaptivekt.components.AdaptiveIconButton
+import io.github.adaptivekt.components.icons.AdaptiveIcons
 import io.github.adaptivekt.components.AdaptiveBadge
 import io.github.adaptivekt.components.AdaptiveBadgeTone
 import io.github.adaptivekt.core.AdaptiveBreakpoint
@@ -123,7 +128,10 @@ private fun ConversationList(
             onValueChange = onQuery,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
             placeholder = { Text("Buscar conversaciones") },
-            leadingIcon = { Text("⌕", fontSize = 24.sp) },
+            leadingIcon = {
+                AdaptiveIcons.Search(size = 20.dp, tint = AdaptiveTheme.colors.textSecondary)
+            },
+            colors = oneChatFieldColors(),
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
         )
@@ -229,11 +237,13 @@ private fun ChatDetail(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (onBack != null) {
-                    TextButton(
-                        onClick = onBack,
-                        contentPadding = PaddingValues(horizontal = 4.dp),
-                        modifier = Modifier.widthIn(min = 48.dp),
-                    ) { Text("‹", fontSize = 32.sp, lineHeight = 34.sp) }
+                    AdaptiveIconButton(onClick = onBack, size = 44.dp) {
+                        AdaptiveIcons.ChevronLeft(
+                            size = 24.dp,
+                            tint = AdaptiveTheme.colors.textPrimary,
+                            contentDescription = "Volver a conversaciones",
+                        )
+                    }
                 }
                 AdaptiveAvatar(conversation.title, size = 40.dp)
                 Column(Modifier.weight(1f)) {
@@ -378,7 +388,8 @@ private fun MessageComposer(
             singleLine = false,
             maxLines = 4,
             shape = RoundedCornerShape(22.dp),
-            textStyle = MaterialTheme.typography.body1,
+            colors = oneChatFieldColors(),
+            textStyle = MaterialTheme.typography.body1.copy(color = AdaptiveTheme.colors.textPrimary),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
         )
         Button(
@@ -395,5 +406,24 @@ private fun MessageComposer(
                 strokeWidth = 2.dp,
             ) else Text("➤", fontSize = 23.sp)
         }
+    }
+}
+
+/** Scalable vector paper-plane icon; no Unicode fallback glyphs or font differences. */
+@Composable
+private fun SendArrow(color: Color) {
+    Canvas(Modifier.size(23.dp)) {
+        val w = size.width
+        val h = size.height
+        val plane = Path().apply {
+            moveTo(w * 0.09f, h * 0.11f)
+            lineTo(w * 0.93f, h * 0.50f)
+            lineTo(w * 0.09f, h * 0.89f)
+            lineTo(w * 0.26f, h * 0.55f)
+            lineTo(w * 0.62f, h * 0.50f)
+            lineTo(w * 0.26f, h * 0.45f)
+            close()
+        }
+        drawPath(plane, color)
     }
 }
