@@ -1,46 +1,39 @@
 package com.onechat.validation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import io.github.adaptivekt.components.AdaptiveAvatar
 import io.github.adaptivekt.components.AdaptiveBadge
 import io.github.adaptivekt.components.AdaptiveBadgeTone
-import io.github.adaptivekt.components.AdaptiveButton
-import io.github.adaptivekt.components.AdaptiveButtonVariant
-import io.github.adaptivekt.components.AdaptiveTextField
 import io.github.adaptivekt.core.AdaptiveBreakpoint
-import io.github.adaptivekt.core.AdaptiveColorSchemes
 import io.github.adaptivekt.core.AdaptiveTheme
 import io.github.adaptivekt.core.breakpointForWidth
 import io.github.adaptivekt.feedback.AdaptiveEmptyState
 import io.github.adaptivekt.feedback.AdaptiveLoadingState
 
-/** Reference presentation layer. Source dependency ONLY on Maven Central alpha01. */
 data class OneChatConversation(val id: String, val title: String, val preview: String, val unread: Int = 0)
 data class OneChatBubble(val id: String, val conversationId: String, val body: String, val mine: Boolean, val label: String)
 enum class ConnectionLabel { ONLINE, CONNECTING, RECONNECTING, OFFLINE }
@@ -56,7 +49,7 @@ data class OneChatView(
     val error: String? = null,
 )
 
-/** Caller supplies the actual ViewModel state and side effects, not another mock repository. */
+/** Uses the AdaptiveKT theme inherited from the application, never forces a light scheme. */
 @Composable
 fun OneChatMavenWorkspace(
     state: OneChatView,
@@ -68,53 +61,82 @@ fun OneChatMavenWorkspace(
     onCreateConversation: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
-    darkTheme: Boolean = false,
 ) {
-    AdaptiveTheme(colorScheme = if (darkTheme) AdaptiveColorSchemes.defaultDark() else AdaptiveColorSchemes.defaultLight()) {
-        BoxWithConstraints(modifier.fillMaxSize().background(AdaptiveTheme.colors.background)) {
-            val breakpoint = breakpointForWidth(maxWidth)
-            val wide = breakpoint == AdaptiveBreakpoint.Expanded || breakpoint == AdaptiveBreakpoint.Large
-            if (wide) {
-                Row(Modifier.fillMaxSize()) {
-                    Box(Modifier.weight(3f).fillMaxHeight()) {
-                        ConversationList(state, onSelect, onQuery, onCreateConversation, onRetry)
-                    }
-                    Box(Modifier.width(1.dp).fillMaxHeight().background(AdaptiveTheme.colors.border))
-                    Box(Modifier.weight(7f).fillMaxHeight()) {
-                        ChatDetail(state, onDraft, onSend)
-                    }
+    BoxWithConstraints(modifier.fillMaxSize().background(AdaptiveTheme.colors.background)) {
+        val breakpoint = breakpointForWidth(maxWidth)
+        val wide = breakpoint == AdaptiveBreakpoint.Expanded || breakpoint == AdaptiveBreakpoint.Large
+        if (wide) {
+            Row(Modifier.fillMaxSize()) {
+                Box(Modifier.weight(3f).fillMaxHeight()) {
+                    ConversationList(state, onSelect, onQuery, onCreateConversation, onRetry)
                 }
-            } else if (state.selectedId == null) {
-                ConversationList(state, onSelect, onQuery, onCreateConversation, onRetry)
-            } else {
-                Column(Modifier.fillMaxSize()) {
-                    AdaptiveButton(text = "Volver", onClick = onBack, variant = AdaptiveButtonVariant.Ghost,
-                        modifier = Modifier.padding(8.dp))
-                    Box(Modifier.weight(1f)) { ChatDetail(state, onDraft, onSend) }
+                Box(Modifier.width(1.dp).fillMaxHeight().background(AdaptiveTheme.colors.border))
+                Box(Modifier.weight(7f).fillMaxHeight()) {
+                    ChatDetail(state, onDraft, onSend)
                 }
             }
+        } else if (state.selectedId == null) {
+            ConversationList(state, onSelect, onQuery, onCreateConversation, onRetry)
+        } else {
+            ChatDetail(state, onDraft, onSend, onBack = onBack)
         }
     }
 }
 
 @Composable
 private fun ConversationList(
-    state: OneChatView, onSelect: (String) -> Unit, onQuery: (String) -> Unit,
-    onCreate: () -> Unit, onRetry: () -> Unit,
+    state: OneChatView,
+    onSelect: (String) -> Unit,
+    onQuery: (String) -> Unit,
+    onCreate: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().background(AdaptiveTheme.colors.surface)) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically) {
-            BasicText("OneChat", style = TextStyle(color = AdaptiveTheme.colors.textPrimary, fontWeight = FontWeight.Bold))
-            AdaptiveButton("Nuevo", onClick = onCreate)
+        Row(
+            Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 20.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column {
+                Text(
+                    "Mensajes",
+                    style = MaterialTheme.typography.h5,
+                    fontWeight = FontWeight.Bold,
+                    color = AdaptiveTheme.colors.textPrimary,
+                )
+                Text(
+                    if (state.conversations.size == 1) "1 conversación" else
+                        state.conversations.size.toString() + " conversaciones",
+                    style = MaterialTheme.typography.caption,
+                    color = AdaptiveTheme.colors.textMuted,
+                )
+            }
+            Button(
+                onClick = onCreate,
+                shape = RoundedCornerShape(14.dp),
+                elevation = ButtonDefaults.elevation(defaultElevation = 0.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+            ) { Text("+  Nuevo", fontWeight = FontWeight.SemiBold) }
         }
-        AdaptiveTextField(state.query, onValueChange = onQuery, placeholder = "Buscar chats",
-            modifier = Modifier.padding(horizontal = 12.dp))
+        OutlinedTextField(
+            value = state.query,
+            onValueChange = onQuery,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            placeholder = { Text("Buscar conversaciones") },
+            leadingIcon = { Text("⌕", fontSize = 24.sp) },
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp),
+        )
         if (state.error != null) {
-            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                BasicText(state.error, modifier = Modifier.weight(1f),
-                    style = TextStyle(color = AdaptiveTheme.colors.danger))
-                AdaptiveButton("Reintentar", onClick = onRetry)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(AdaptiveTheme.colors.dangerSubtle).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(state.error, color = AdaptiveTheme.colors.dangerText,
+                    style = MaterialTheme.typography.body2, modifier = Modifier.weight(1f))
+                TextButton(onClick = onRetry) { Text("Reintentar") }
             }
         }
         val query = state.query.trim()
@@ -123,29 +145,55 @@ private fun ConversationList(
                 it.preview.contains(query, ignoreCase = true)
         }
         when {
-            state.loading -> AdaptiveLoadingState(message = "Cargando conversaciones")
-            visible.isEmpty() -> AdaptiveEmptyState(
-                title = if (query.isEmpty()) "No hay conversaciones" else "Sin resultados",
-                description = "Inicia una conversación o cambia la búsqueda.",
-            )
-            else -> LazyColumn(Modifier.fillMaxSize()) {
+            state.loading && state.conversations.isEmpty() -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AdaptiveLoadingState(message = "Cargando conversaciones")
+                }
+            }
+            visible.isEmpty() -> {
+                Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                    AdaptiveEmptyState(
+                        title = if (query.isEmpty()) "Empezá una conversación" else "Sin resultados",
+                        description = if (query.isEmpty())
+                            "Buscá un contacto con el botón Nuevo para escribirle."
+                        else "Probá con otro nombre de usuario.",
+                    )
+                }
+            }
+            else -> LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 items(visible, key = { it.id }) { conversation ->
+                    val selected = conversation.id == state.selectedId
                     Row(
                         modifier = Modifier.fillMaxWidth()
-                            .background(if (conversation.id == state.selectedId)
-                                AdaptiveTheme.colors.primarySubtle else AdaptiveTheme.colors.surface)
-                            .clickable { onSelect(conversation.id) }.padding(14.dp),
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (selected) AdaptiveTheme.colors.primarySubtle else AdaptiveTheme.colors.surface)
+                            .clickable { onSelect(conversation.id) }
+                            .padding(horizontal = 12.dp, vertical = 13.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
+                        // Placeholder initials are provided by published AdaptiveKT.
+                        AdaptiveAvatar(name = conversation.title, size = 46.dp)
                         Column(Modifier.weight(1f)) {
-                            BasicText(conversation.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(color = AdaptiveTheme.colors.textPrimary, fontWeight = FontWeight.SemiBold))
-                            Spacer(Modifier.height(4.dp))
-                            BasicText(conversation.preview, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = TextStyle(color = AdaptiveTheme.colors.textMuted))
+                            Text(conversation.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                fontWeight = FontWeight.SemiBold,
+                                color = AdaptiveTheme.colors.textPrimary,
+                                style = MaterialTheme.typography.body1)
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                conversation.preview.ifBlank { "Escribí tu primer mensaje" },
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                color = AdaptiveTheme.colors.textMuted,
+                                style = MaterialTheme.typography.body2,
+                            )
                         }
                         if (conversation.unread > 0) AdaptiveBadge(
-                            text = conversation.unread.coerceAtMost(99).toString(), tone = AdaptiveBadgeTone.Info,
+                            text = conversation.unread.coerceAtMost(99).toString(),
+                            tone = AdaptiveBadgeTone.Info,
                         )
                     }
                 }
@@ -155,53 +203,197 @@ private fun ConversationList(
 }
 
 @Composable
-private fun ChatDetail(state: OneChatView, onDraft: (String) -> Unit, onSend: (String, String) -> Unit) {
+private fun ChatDetail(
+    state: OneChatView,
+    onDraft: (String) -> Unit,
+    onSend: (String, String) -> Unit,
+    onBack: (() -> Unit)? = null,
+) {
     val id = state.selectedId
     val conversation = state.conversations.find { it.id == id }
     when {
-        id == null -> AdaptiveEmptyState("Selecciona una conversación")
-        conversation == null -> AdaptiveEmptyState("Conversación no disponible")
-        else -> Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                BasicText(conversation.title, style = TextStyle(color = AdaptiveTheme.colors.textPrimary, fontWeight = FontWeight.Bold))
-                val (label, tone) = when (state.connection) {
-                    ConnectionLabel.ONLINE -> "En línea" to AdaptiveBadgeTone.Success
-                    ConnectionLabel.CONNECTING -> "Conectando" to AdaptiveBadgeTone.Warning
-                    ConnectionLabel.RECONNECTING -> "Reconectando" to AdaptiveBadgeTone.Warning
-                    ConnectionLabel.OFFLINE -> "Sin conexión" to AdaptiveBadgeTone.Danger
+        id == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            AdaptiveEmptyState(
+                title = "Elegí una conversación",
+                description = "Tus mensajes aparecerán aquí.",
+            )
+        }
+        conversation == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            AdaptiveEmptyState("Esta conversación ya no está disponible")
+        }
+        else -> Column(Modifier.fillMaxSize().background(AdaptiveTheme.colors.background)) {
+            Row(
+                Modifier.fillMaxWidth().background(AdaptiveTheme.colors.surface)
+                    .padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onBack != null) {
+                    TextButton(
+                        onClick = onBack,
+                        contentPadding = PaddingValues(horizontal = 4.dp),
+                        modifier = Modifier.widthIn(min = 48.dp),
+                    ) { Text("‹", fontSize = 32.sp, lineHeight = 34.sp) }
                 }
-                AdaptiveBadge(label, tone = tone)
+                AdaptiveAvatar(conversation.title, size = 40.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(conversation.title, fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.subtitle1,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = AdaptiveTheme.colors.textPrimary)
+                    Text(
+                        when (state.connection) {
+                            ConnectionLabel.ONLINE -> "Conectado"
+                            ConnectionLabel.CONNECTING -> "Conectando…"
+                            ConnectionLabel.RECONNECTING -> "Reconectando…"
+                            ConnectionLabel.OFFLINE -> "Sin conexión"
+                        },
+                        style = MaterialTheme.typography.caption,
+                        color = if (state.connection == ConnectionLabel.ONLINE)
+                            AdaptiveTheme.colors.success else AdaptiveTheme.colors.textMuted,
+                    )
+                }
+                StatusDot(state.connection)
+            }
+            Spacer(Modifier.height(1.dp).fillMaxWidth().background(AdaptiveTheme.colors.border))
+
+            if (state.error != null) {
+                Row(
+                    Modifier.fillMaxWidth().padding(12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AdaptiveTheme.colors.dangerSubtle).padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(state.error, style = MaterialTheme.typography.body2,
+                        color = AdaptiveTheme.colors.dangerText, modifier = Modifier.weight(1f))
+                }
             }
             val visible = state.messages.filter { it.conversationId == id }
+            val scrollState = rememberLazyListState()
+            LaunchedEffect(id, visible.lastOrNull()?.id) {
+                if (visible.isNotEmpty()) scrollState.animateScrollToItem(visible.lastIndex)
+            }
             if (visible.isEmpty()) {
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    AdaptiveEmptyState("Sin mensajes")
+                Box(Modifier.weight(1f).fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                    AdaptiveEmptyState(
+                        title = "Todavía no hay mensajes",
+                        description = "Mandá el primer mensaje para empezar.",
+                    )
                 }
             } else {
-                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = scrollState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
                     items(visible, key = { it.id }) { msg ->
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                            horizontalArrangement = if (msg.mine) Arrangement.End else Arrangement.Start) {
-                            Column(Modifier.fillMaxWidth(0.83f)
-                                .background(if (msg.mine) AdaptiveTheme.colors.primarySubtle else AdaptiveTheme.colors.surface)
-                                .padding(12.dp)) {
-                                BasicText(msg.body, style = TextStyle(color = AdaptiveTheme.colors.textPrimary))
-                                BasicText(msg.label, style = TextStyle(color = AdaptiveTheme.colors.textMuted))
-                            }
-                        }
+                        MessageBubble(msg)
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AdaptiveTextField(state.draft, onValueChange = onDraft,
-                    placeholder = "Mensaje", modifier = Modifier.weight(1f))
-                AdaptiveButton(if (state.sending) "Enviando" else "Enviar",
-                    enabled = !state.sending && state.draft.isNotBlank() && state.connection != ConnectionLabel.CONNECTING,
-                    onClick = {
-                        val message = state.draft.trim()
-                        if (message.isNotEmpty()) onSend(id, message)
-                    })
+            MessageComposer(
+                draft = state.draft,
+                sending = state.sending,
+                onDraft = onDraft,
+                onSend = { onSend(id, state.draft.trim()) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusDot(connection: ConnectionLabel) {
+    val color = when (connection) {
+        ConnectionLabel.ONLINE -> AdaptiveTheme.colors.success
+        ConnectionLabel.CONNECTING, ConnectionLabel.RECONNECTING -> AdaptiveTheme.colors.warning
+        ConnectionLabel.OFFLINE -> AdaptiveTheme.colors.textMuted
+    }
+    Box(
+        Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(color),
+    )
+}
+
+@Composable
+private fun MessageBubble(msg: OneChatBubble) {
+    val shape = if (msg.mine)
+        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 5.dp)
+    else
+        RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp, bottomStart = 5.dp, bottomEnd = 18.dp)
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = if (msg.mine) Arrangement.End else Arrangement.Start,
+    ) {
+        Column(
+            modifier = Modifier.widthIn(max = 320.dp)
+                .fillMaxWidth(0.81f)
+                .clip(shape)
+                .background(if (msg.mine) AdaptiveTheme.colors.primarySubtle else AdaptiveTheme.colors.surface)
+                .border(
+                    width = if (msg.mine) 0.dp else 1.dp,
+                    color = if (msg.mine) Color.Transparent else AdaptiveTheme.colors.border,
+                    shape = shape,
+                )
+                .padding(horizontal = 15.dp, vertical = 11.dp),
+        ) {
+            Text(
+                msg.body,
+                style = MaterialTheme.typography.body1,
+                color = if (msg.mine) AdaptiveTheme.colors.primaryText else AdaptiveTheme.colors.textPrimary,
+                lineHeight = 21.sp,
+            )
+            if (msg.mine) {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "✓ Enviado",
+                    modifier = Modifier.align(Alignment.End),
+                    style = MaterialTheme.typography.caption,
+                    color = AdaptiveTheme.colors.textMuted,
+                    fontSize = 10.sp,
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun MessageComposer(
+    draft: String,
+    sending: Boolean,
+    onDraft: (String) -> Unit,
+    onSend: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth()
+            .background(AdaptiveTheme.colors.surface)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = onDraft,
+            modifier = Modifier.weight(1f).heightIn(min = 54.dp, max = 128.dp),
+            placeholder = { Text("Escribí un mensaje") },
+            singleLine = false,
+            maxLines = 4,
+            shape = RoundedCornerShape(22.dp),
+            textStyle = MaterialTheme.typography.body1,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+        )
+        Button(
+            onClick = onSend,
+            enabled = draft.isNotBlank() && !sending,
+            modifier = Modifier.size(54.dp),
+            shape = RoundedCornerShape(18.dp),
+            contentPadding = PaddingValues(0.dp),
+            elevation = ButtonDefaults.elevation(defaultElevation = 0.dp),
+        ) {
+            if (sending) CircularProgressIndicator(
+                modifier = Modifier.size(19.dp),
+                color = MaterialTheme.colors.onPrimary,
+                strokeWidth = 2.dp,
+            ) else Text("➤", fontSize = 23.sp)
         }
     }
 }
