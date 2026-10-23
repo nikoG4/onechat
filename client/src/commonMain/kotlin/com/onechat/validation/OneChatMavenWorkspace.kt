@@ -196,7 +196,7 @@ private fun ChatDetail(state: OneChatView, onDraft: (String) -> Unit, onSend: (S
                 AdaptiveTextField(state.draft, onValueChange = onDraft,
                     placeholder = "Mensaje", modifier = Modifier.weight(1f))
                 AdaptiveButton(if (state.sending) "Enviando" else "Enviar",
-                    enabled = !state.sending && state.draft.isNotBlank() && state.connection == ConnectionLabel.ONLINE,
+                    enabled = !state.sending && state.draft.isNotBlank() && state.connection != ConnectionLabel.CONNECTING,
                     onClick = {
                         val message = state.draft.trim()
                         if (message.isNotEmpty()) onSend(id, message)
