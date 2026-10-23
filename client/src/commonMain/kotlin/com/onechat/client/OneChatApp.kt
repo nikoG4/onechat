@@ -31,11 +31,15 @@ import com.onechat.validation.OneChatMavenWorkspace
  * Material 2 controls use the same semantic colors until equivalents ship via Maven Central.
  */
 @Composable
-fun OneChatApp() {
+fun OneChatApp(
+    openConversationId: String? = null,
+    onConversationOpened: () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     val localStore = rememberChatLocalStore()
-    val controller = remember(scope, localStore) {
-        OneChatController(OneChatApi(), scope, localStore)
+    val notifier = rememberIncomingNotifier()
+    val controller = remember(scope, localStore, notifier) {
+        OneChatController(OneChatApi(), scope, localStore, notifier)
     }
     DisposableEffect(controller) { onDispose { controller.close() } }
     val dark = isSystemInDarkTheme()
@@ -66,6 +70,14 @@ fun OneChatApp() {
         )
         MaterialTheme(colors = materialColors) {
             val user = controller.account
+            LaunchedEffect(user?.id, openConversationId, controller.view.conversations) {
+                if (user != null && openConversationId != null &&
+                    controller.view.conversations.any { it.id == openConversationId }
+                ) {
+                    controller.select(openConversationId)
+                    onConversationOpened()
+                }
+            }
             OneChatBackHandler(
                 enabled = user != null && (controller.newConversation || controller.view.selectedId != null),
                 onBack = {
@@ -79,6 +91,9 @@ fun OneChatApp() {
                     controller.newConversation -> NewConversationScreen(controller)
                     else -> Column(Modifier.fillMaxSize()) {
                         AppHeader(username = user.username, onSignOut = controller::signOut)
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                            NotificationPermissionPrompt()
+                        }
                         controller.incomingNotice?.let { notice ->
                             Row(
                                 Modifier.fillMaxWidth()
