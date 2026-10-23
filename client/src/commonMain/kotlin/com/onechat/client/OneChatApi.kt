@@ -22,16 +22,22 @@ const val DEFAULT_API_URL = "https://onechat-rl58.onrender.com"
 @Serializable data class ApiAuth(val user: ApiUser, val token: String)
 @Serializable data class AuthInput(val username: String, val password: String, val inviteCode: String? = null)
 @Serializable data class ApiConversation(
-    val id: String, val peer: ApiUser, val createdAt: Long, val preview: String? = null
+    val id: String, val peer: ApiUser, val createdAt: Long, val preview: String? = null,
+    val unread: Int = 0
 )
 @Serializable data class DirectInput(val username: String)
 @Serializable data class MessageInput(val clientMessageId: String, val body: String)
 @Serializable data class ApiMessage(
     val id: String, val conversationId: String, val senderId: String,
-    val clientMessageId: String, val body: String, val createdAt: Long
+    val clientMessageId: String, val body: String, val createdAt: Long,
+    val readAt: Long? = null,
 )
 @Serializable data class WsTicket(val ticket: String, val expiresInSeconds: Int)
-@Serializable data class MessageEvent(val type: String, val conversationId: String, val message: ApiMessage)
+@Serializable data class ReadReceipt(val conversationId: String, val readerId: String, val readAt: Long)
+@Serializable data class MessageEvent(
+    val type: String, val conversationId: String,
+    val message: ApiMessage? = null, val receipt: ReadReceipt? = null,
+)
 @Serializable data class ApiFailure(val error: String)
 
 class OneChatHttpException(val code: Int, message: String) : Exception(message)
@@ -122,6 +128,11 @@ class OneChatApi(
             setBody(input)
         })
 
+    suspend fun markRead(token: String, conversationId: String): ReadReceipt =
+        read(client.post(root + "/v1/conversations/" + checkedId(conversationId) + "/read") {
+            bearerAuth(token)
+        })
+
     suspend fun wsTicket(token: String): WsTicket =
         read(client.post(root + "/v1/ws-ticket") { bearerAuth(token) })
 
@@ -133,7 +144,7 @@ class OneChatApi(
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val message = codec.decodeFromString<MessageEvent>(frame.readText())
-                    if (message.type == "message.created") onMessage(message)
+                    if (message.type == "message.created" || message.type == "conversation.read") onMessage(message)
                 }
             }
         }
