@@ -1,0 +1,71 @@
+name: One-time migration from misplaced OneChat source
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/import-onechat-once.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Import only OneChat-owned files and discard the old Spring tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone -q --depth=1 --filter=blob:none --branch feat/onechat-preview-backend \
+            https://github.com/nikoG4/AdaptiveKt.git "$RUNNER_TEMP/misplaced-onechat"
+          SOURCE="$RUNNER_TEMP/misplaced-onechat"
+          test -f "$SOURCE/onechat-preview/backend/src/main/kotlin/com/onechat/preview/PreviewServer.kt"
+          test -f "$SOURCE/onechat-preview/backend/src/test/kotlin/com/onechat/preview/BackendIntegrationTest.kt"
+          test -f "$SOURCE/validation/onechat-maven-alpha01/src/commonMain/kotlin/com/onechat/chats/engine/ChatEngine.kt"
+          test -f "$SOURCE/validation/onechat-maven-alpha01/build.gradle.kts"
+          # Remove all old tracked files, preserving this one-time workflow.
+          git ls-files -z | grep -zvFx '.github/workflows/import-onechat-once.yml' \
+            | xargs -0 -r git rm -q -f --
+          mkdir -p backend client
+          cp -a "$SOURCE/onechat-preview/backend/." backend/
+          cp -a "$SOURCE/validation/onechat-maven-alpha01/." client/
+          sed -i 's@../../gradlew -p . run@gradle -p backend run@g' backend/README.md
+          sed -i 's@onechat-preview/backend@backend@g' backend/README.md
+          sed -i 's@validation/onechat-maven-alpha01@client@g' client/README.md
+          cp "$SOURCE/onechat-preview/render.yaml" render.yaml
+          sed -i 's@rootDir: onechat-preview/backend@rootDir: backend@' render.yaml
+          cat > README.md <<'EOF'
+          # OneChat
+
+          Independent repository for the **new** OneChat prototype.
+
+          - \`backend/\`: Ktor, PostgreSQL, BCrypt, JWT, direct chats, persistent messages and WebSockets.
+          - \`client/\`: Kotlin Multiplatform UI and reducers using AdaptiveKT **from Maven Central**.
+          - \`render.yaml\`: Render Free deployment scaffold, with Neon database supplied as environment variables.
+
+          This is currently a tested API/backend and a separate KMP UI reference, **not yet a fully connected messenger**.
+
+          The old Spring/Compose prototype is removed from \`main\`. Earlier commits and other Git branches may still contain its historical files.
+          EOF
+          cat > .gitignore <<'EOF'
+          **/.gradle/
+          **/build/
+          **/.idea/
+          **/.kotlin/
+          **/local.properties
+          .env
+          .env.*
+          !.env.example
+          *.iml
+          EOF
+          git add -A
+          git diff --cached --quiet && { echo "No changes made"; exit 1; }
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m 'refactor(onechat): replace legacy Spring prototype with Ktor and KMP'
+          git push origin HEAD:main
+          echo 'Main replaced with OneChat-owned backend + KMP reference client.' >> "$GITHUB_STEP_SUMMARY"
