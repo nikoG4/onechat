@@ -122,10 +122,11 @@ class OneChatApi(
     suspend fun wsTicket(token: String): WsTicket =
         read(client.post(root + "/v1/ws-ticket") { bearerAuth(token) })
 
-    suspend fun events(token: String, onMessage: suspend (MessageEvent) -> Unit) {
+    suspend fun events(token: String, onConnected: suspend () -> Unit, onMessage: suspend (MessageEvent) -> Unit) {
         val ticket = wsTicket(token).ticket
         val wsUrl = "wss://" + root.removePrefix("https://") + "/v1/ws?ticket=" + ticket
         client.webSocket(urlString = wsUrl) {
+            onConnected()
             for (frame in incoming) {
                 if (frame is Frame.Text) {
                     val message = codec.decodeFromString<MessageEvent>(frame.readText())
