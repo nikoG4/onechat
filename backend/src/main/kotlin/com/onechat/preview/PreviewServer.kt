@@ -32,7 +32,17 @@ private class RealtimeHub {
         clients[user]?.remove(session)
     }
     suspend fun emit(members: List<String>, msg: MessageDto) {
-        val payload = jsonCodec.encodeToString(MessageEvent("message.created", msg.conversationId, msg))
+        val payload = jsonCodec.encodeToString(MessageEvent("message.created", msg.conversationId, message = msg))
+        for (member in members.distinct()) {
+            for (socket in clients[member] ?: emptySet()) {
+                try { socket.send(Frame.Text(payload)) } catch (_: Exception) { leave(member, socket) }
+            }
+        }
+    }
+    suspend fun emitReceipt(members: List<String>, receipt: ReadReceiptDto) {
+        val payload = jsonCodec.encodeToString(
+            MessageEvent("conversation.read", receipt.conversationId, receipt = receipt)
+        )
         for (member in members.distinct()) {
             for (socket in clients[member] ?: emptySet()) {
                 try { socket.send(Frame.Text(payload)) } catch (_: Exception) { leave(member, socket) }
@@ -194,6 +204,21 @@ fun Application.installOneChatPreview(config: PreviewConfig, db: ChatDatabase) {
                 }
                 if (created.created) hub.emit(db.members(id), created.message)
                 call.respond(if (created.created) HttpStatusCode.Created else HttpStatusCode.OK, created.message)
+            }
+            post("/conversations/{id}/read") {
+                val account = call.user(jwt, db) ?: return@post
+                val id = call.parameters["id"].orEmpty()
+                if (!db.isMember(account.id, id)) {
+                    call.respond(HttpStatusCode.Forbidden, ApiError("Access denied"))
+                    return@post
+                }
+                val receipt = db.markRead(id, account.id)
+                if (receipt != null) hub.emitReceipt(db.members(id), receipt)
+                call.respond(HttpStatusCode.OK, ReadReceiptDto(
+                    conversationId = id,
+                    readerId = account.id,
+                    readAt = receipt?.readAt ?: System.currentTimeMillis(),
+                ))
             }
             post("/ws-ticket") {
                 val account = call.user(jwt, db) ?: return@post

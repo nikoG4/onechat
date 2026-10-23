@@ -16,11 +16,16 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -39,8 +44,14 @@ import io.github.adaptivekt.core.breakpointForWidth
 import io.github.adaptivekt.feedback.AdaptiveEmptyState
 import io.github.adaptivekt.feedback.AdaptiveLoadingState
 
-data class OneChatConversation(val id: String, val title: String, val preview: String, val unread: Int = 0)
-data class OneChatBubble(val id: String, val conversationId: String, val body: String, val mine: Boolean, val label: String)
+data class OneChatConversation(
+    val id: String, val title: String, val preview: String,
+    val unread: Int = 0, val peerId: String = "",
+)
+data class OneChatBubble(
+    val id: String, val conversationId: String, val body: String,
+    val mine: Boolean, val label: String, val readAt: Long? = null,
+)
 enum class ConnectionLabel { ONLINE, CONNECTING, RECONNECTING, OFFLINE }
 data class OneChatView(
     val conversations: List<OneChatConversation> = emptyList(),
@@ -219,6 +230,39 @@ private fun ChatDetail(
 ) {
     val id = state.selectedId
     val conversation = state.conversations.find { it.id == id }
+    var showProfile by remember(id) { mutableStateOf(false) }
+    if (showProfile && conversation != null) {
+        AlertDialog(
+            onDismissRequest = { showProfile = false },
+            title = { Text("Perfil del contacto", color = AdaptiveTheme.colors.textPrimary) },
+            text = {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    AdaptiveAvatar(name = conversation.title, size = 76.dp)
+                    Text("@" + conversation.title, style = MaterialTheme.typography.h6,
+                        color = AdaptiveTheme.colors.textPrimary)
+                    Text("Contacto de OneChat", color = AdaptiveTheme.colors.textMuted,
+                        style = MaterialTheme.typography.body2)
+                    if (conversation.peerId.isNotBlank()) {
+                        Text("ID de contacto: " + conversation.peerId,
+                            color = AdaptiveTheme.colors.textMuted,
+                            style = MaterialTheme.typography.caption)
+                    }
+                    Text("La presencia en línea aún no está disponible.",
+                        color = AdaptiveTheme.colors.textSecondary,
+                        style = MaterialTheme.typography.body2)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showProfile = false }) { Text("Cerrar") }
+            },
+            backgroundColor = AdaptiveTheme.colors.surface,
+            shape = RoundedCornerShape(20.dp),
+        )
+    }
     when {
         id == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             AdaptiveEmptyState(
@@ -245,15 +289,23 @@ private fun ChatDetail(
                         )
                     }
                 }
-                AdaptiveAvatar(conversation.title, size = 40.dp)
-                Column(Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { showProfile = true }
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    AdaptiveAvatar(conversation.title, size = 40.dp)
+                    Column(Modifier.weight(1f)) {
                     Text(conversation.title, fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.subtitle1,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                         color = AdaptiveTheme.colors.textPrimary)
                     Text(
                         when (state.connection) {
-                            ConnectionLabel.ONLINE -> "Conectado"
+                            ConnectionLabel.ONLINE -> "Conectado al servidor"
                             ConnectionLabel.CONNECTING -> "Conectando…"
                             ConnectionLabel.RECONNECTING -> "Reconectando…"
                             ConnectionLabel.OFFLINE -> "Sin conexión"
@@ -262,6 +314,7 @@ private fun ChatDetail(
                         color = if (state.connection == ConnectionLabel.ONLINE)
                             AdaptiveTheme.colors.success else AdaptiveTheme.colors.textMuted,
                     )
+                    }
                 }
                 StatusDot(state.connection)
             }
@@ -355,7 +408,7 @@ private fun MessageBubble(msg: OneChatBubble) {
             if (msg.mine) {
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    "✓ Enviado",
+                    if (msg.readAt != null) "✓✓ Leído" else "✓ Enviado",
                     modifier = Modifier.align(Alignment.End),
                     style = MaterialTheme.typography.caption,
                     color = AdaptiveTheme.colors.textMuted,
@@ -366,6 +419,14 @@ private fun MessageBubble(msg: OneChatBubble) {
     }
 }
 
+private val quickEmojis = listOf(
+    "😀", "😂", "🥹", "😊", "😍", "🥰", "😎",
+    "😭", "😅", "😱", "🤔", "😴", "🙄", "😡",
+    "❤️", "💙", "💚", "🔥", "✨", "🎉", "💯",
+    "👍", "👎", "👏", "🙏", "🤝", "👀", "🐸",
+)
+
+/** Picker works on Android, Desktop and Wasm without uploading text or media. */
 @Composable
 private fun MessageComposer(
     draft: String,
@@ -373,39 +434,97 @@ private fun MessageComposer(
     onDraft: (String) -> Unit,
     onSend: () -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth()
-            .background(AdaptiveTheme.colors.surface)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.Bottom,
+    var showEmojis by remember { mutableStateOf(false) }
+    Column(
+        Modifier.fillMaxWidth().background(AdaptiveTheme.colors.surface)
     ) {
-        OutlinedTextField(
-            value = draft,
-            onValueChange = onDraft,
-            modifier = Modifier.weight(1f).heightIn(min = 54.dp, max = 128.dp),
-            placeholder = { Text("Escribí un mensaje") },
-            singleLine = false,
-            maxLines = 4,
-            shape = RoundedCornerShape(22.dp),
-            colors = oneChatFieldColors(),
-            textStyle = MaterialTheme.typography.body1.copy(color = AdaptiveTheme.colors.textPrimary),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-        )
-        Button(
-            onClick = onSend,
-            enabled = draft.isNotBlank() && !sending,
-            modifier = Modifier.size(54.dp),
-            shape = RoundedCornerShape(18.dp),
-            contentPadding = PaddingValues(0.dp),
-            elevation = ButtonDefaults.elevation(defaultElevation = 0.dp),
-        ) {
-            if (sending) CircularProgressIndicator(
-                modifier = Modifier.size(19.dp),
-                color = MaterialTheme.colors.onPrimary,
-                strokeWidth = 2.dp,
-            ) else Text("➤", fontSize = 23.sp)
+        if (showEmojis) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(AdaptiveTheme.colors.surfaceMuted)
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                quickEmojis.chunked(7).forEach { row ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        row.forEach { emoji ->
+                            Box(
+                                modifier = Modifier.size(42.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        onDraft(draft + emoji)
+                                        showEmojis = false
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(emoji, fontSize = 23.sp)
+                            }
+                        }
+                    }
+                }
+            }
         }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            AdaptiveIconButton(onClick = { showEmojis = !showEmojis }, size = 44.dp) {
+                SmileIcon(color = AdaptiveTheme.colors.textPrimary)
+            }
+            OutlinedTextField(
+                value = draft,
+                onValueChange = onDraft,
+                modifier = Modifier.weight(1f).heightIn(min = 54.dp, max = 128.dp),
+                placeholder = { Text("Escribí un mensaje") },
+                singleLine = false,
+                maxLines = 4,
+                shape = RoundedCornerShape(20.dp),
+                colors = oneChatFieldColors(),
+                textStyle = MaterialTheme.typography.body1.copy(color = AdaptiveTheme.colors.textPrimary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+            )
+            Button(
+                onClick = onSend,
+                enabled = draft.isNotBlank() && !sending,
+                modifier = Modifier.size(52.dp),
+                shape = RoundedCornerShape(17.dp),
+                contentPadding = PaddingValues(0.dp),
+                elevation = ButtonDefaults.elevation(defaultElevation = 0.dp),
+            ) {
+                if (sending) CircularProgressIndicator(
+                    modifier = Modifier.size(19.dp),
+                    color = MaterialTheme.colors.onPrimary,
+                    strokeWidth = 2.dp,
+                ) else SendArrow(color = MaterialTheme.colors.onPrimary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmileIcon(color: Color) {
+    Canvas(Modifier.size(22.dp)) {
+        val w = size.width
+        val h = size.height
+        drawCircle(color = color, radius = w * .43f, style = Stroke(width = w * .09f))
+        drawCircle(color = color, radius = w * .045f,
+            center = androidx.compose.ui.geometry.Offset(w * .37f, h * .41f))
+        drawCircle(color = color, radius = w * .045f,
+            center = androidx.compose.ui.geometry.Offset(w * .63f, h * .41f))
+        drawArc(
+            color = color, startAngle = 20f, sweepAngle = 140f,
+            useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(w * .27f, h * .31f),
+            size = androidx.compose.ui.geometry.Size(w * .46f, h * .44f),
+            style = Stroke(width = w * .07f),
+        )
     }
 }
 

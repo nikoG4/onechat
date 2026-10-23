@@ -1,6 +1,7 @@
 package com.onechat.client
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,11 +31,15 @@ import com.onechat.validation.OneChatMavenWorkspace
  * Material 2 controls use the same semantic colors until equivalents ship via Maven Central.
  */
 @Composable
-fun OneChatApp() {
+fun OneChatApp(
+    openConversationId: String? = null,
+    onConversationOpened: () -> Unit = {},
+) {
     val scope = rememberCoroutineScope()
     val localStore = rememberChatLocalStore()
-    val controller = remember(scope, localStore) {
-        OneChatController(OneChatApi(), scope, localStore)
+    val notifier = rememberIncomingNotifier()
+    val controller = remember(scope, localStore, notifier) {
+        OneChatController(OneChatApi(), scope, localStore, notifier)
     }
     DisposableEffect(controller) { onDispose { controller.close() } }
     val dark = isSystemInDarkTheme()
@@ -65,6 +70,14 @@ fun OneChatApp() {
         )
         MaterialTheme(colors = materialColors) {
             val user = controller.account
+            LaunchedEffect(user?.id, openConversationId, controller.view.conversations) {
+                if (user != null && openConversationId != null &&
+                    controller.view.conversations.any { it.id == openConversationId }
+                ) {
+                    controller.select(openConversationId)
+                    onConversationOpened()
+                }
+            }
             OneChatBackHandler(
                 enabled = user != null && (controller.newConversation || controller.view.selectedId != null),
                 onBack = {
@@ -78,6 +91,38 @@ fun OneChatApp() {
                     controller.newConversation -> NewConversationScreen(controller)
                     else -> Column(Modifier.fillMaxSize()) {
                         AppHeader(username = user.username, onSignOut = controller::signOut)
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                            NotificationPermissionPrompt()
+                        }
+                        controller.incomingNotice?.let { notice ->
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(AdaptiveTheme.colors.primarySubtle)
+                                    .clickable(onClick = controller::openNotice)
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                AdaptiveAvatar(name = notice.title, size = 36.dp)
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "Nuevo mensaje de @" + notice.title,
+                                        color = AdaptiveTheme.colors.primaryText,
+                                        style = MaterialTheme.typography.subtitle2,
+                                    )
+                                    Text(
+                                        notice.preview, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = AdaptiveTheme.colors.textSecondary,
+                                        style = MaterialTheme.typography.caption,
+                                    )
+                                }
+                                AdaptiveIcons.ChevronRight(
+                                    size = 20.dp, tint = AdaptiveTheme.colors.primary,
+                                    contentDescription = "Abrir conversación",
+                                )
+                            }
+                        }
                         controller.storageWarning?.let { warning ->
                             Text(
                                 warning,

@@ -21,6 +21,7 @@ class OneChatController(
     private val api: OneChatApi,
     private val scope: CoroutineScope,
     private val localStore: ChatLocalStore = EphemeralChatStore(),
+    private val notifier: IncomingNotifier = IncomingNotifier { _, _, _ -> Unit },
 ) : AutoCloseable {
     var account by mutableStateOf<ApiUser?>(null)
         private set
@@ -44,6 +45,10 @@ class OneChatController(
         private set
     var storageWarning by mutableStateOf<String?>(null)
         private set
+    var incomingNotice by mutableStateOf<IncomingNotice?>(null)
+        private set
+
+    data class IncomingNotice(val conversationId: String, val title: String, val preview: String)
 
     private var accessToken: String? = null
     private var epoch = 0L
@@ -128,6 +133,7 @@ class OneChatController(
         storageWritable = false
         knownConversations = emptyList()
         storageWarning = null
+        incomingNotice = null
         accessToken = null
         account = null
         cache.clear()
@@ -150,7 +156,10 @@ class OneChatController(
             snapshot.messages.forEach { cache[it.id] = it }
             view = view.copy(
                 conversations = knownConversations.map {
-                    OneChatConversation(it.id, it.peer.username, it.preview.orEmpty())
+                    OneChatConversation(
+                        it.id, it.peer.username, it.preview.orEmpty(),
+                        unread = it.unread, peerId = it.peer.id,
+                    )
                 },
             )
             updateTimeline()
@@ -203,7 +212,10 @@ class OneChatController(
                     conversationId = it.conversationId,
                     body = it.body,
                     mine = it.senderId == owner,
-                    label = if (it.senderId == owner) "Enviado" else "Recibido",
+                    label = if (it.senderId == owner) {
+                        if (it.readAt != null) "Leído" else "Enviado"
+                    } else "Recibido",
+                    readAt = it.readAt,
                 )
             })
     }
@@ -219,7 +231,10 @@ class OneChatController(
                 knownConversations = list
                 view = view.copy(
                     conversations = list.map {
-                        OneChatConversation(it.id, it.peer.username, it.preview.orEmpty())
+                        OneChatConversation(
+                        it.id, it.peer.username, it.preview.orEmpty(),
+                        unread = it.unread, peerId = it.peer.id,
+                    )
                     },
                     loading = false,
                     error = null,
@@ -237,6 +252,7 @@ class OneChatController(
 
     fun select(id: String) {
         selectionEpoch++
+        incomingNotice = null
         view = view.copy(selectedId = id, query = "", error = null)
         loadHistory(id)
     }
@@ -258,6 +274,8 @@ class OneChatController(
                 val messages = api.history(token, id)
                 if (epoch != expected || selection != selectionEpoch || view.selectedId != id) return@launch
                 mergeMessages(messages)
+                // A real receipt is emitted only after the user opens and loads this chat.
+                markRead(id, expected)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (e: Exception) {
@@ -266,6 +284,33 @@ class OneChatController(
                 }
             }
         }
+    }
+
+    private fun markRead(conversationId: String, expected: Long) {
+        val token = accessToken ?: return
+        scope.launch {
+            try {
+                val receipt = api.markRead(token, conversationId)
+                if (epoch == expected) {
+                    view = view.copy(conversations = view.conversations.map {
+                        if (it.id == conversationId) it.copy(unread = 0) else it
+                    })
+                    knownConversations = knownConversations.map {
+                        if (it.id == conversationId) it.copy(unread = 0) else it
+                    }
+                    schedulePersist()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // UI remains usable if the receipt request fails.
+            }
+        }
+    }
+
+    fun openNotice() {
+        val id = incomingNotice?.conversationId ?: return
+        select(id)
     }
 
     fun send(conversationId: String, body: String) {
@@ -371,9 +416,39 @@ class OneChatController(
                             refresh() // Catch messages missed between HTTP load and socket open.
                         }
                     }) { event ->
-                        if (epoch == expected) {
-                            mergeMessages(listOf(event.message))
-                            refresh() // Updates conversation previews even for unselected chats.
+                        if (epoch != expected) return@events
+                        when (event.type) {
+                            "message.created" -> {
+                                val message = event.message ?: return@events
+                                mergeMessages(listOf(message))
+                                if (message.senderId != account?.id) {
+                                    if (view.selectedId == message.conversationId) {
+                                        markRead(message.conversationId, expected)
+                                    } else {
+                                        val title = view.conversations.firstOrNull {
+                                            it.id == message.conversationId
+                                        }?.title ?: "Nuevo mensaje"
+                                        incomingNotice = IncomingNotice(
+                                            message.conversationId, title, message.body.take(75),
+                                        )
+                                        notifier.show(title, message.body.take(100), message.conversationId)
+                                    }
+                                }
+                                refresh()
+                            }
+                            "conversation.read" -> {
+                                val receipt = event.receipt ?: return@events
+                                val changed = cache.values.filter {
+                                    it.conversationId == receipt.conversationId &&
+                                        it.senderId != receipt.readerId && it.readAt == null
+                                }
+                                changed.forEach { cache[it.id] = it.copy(readAt = receipt.readAt) }
+                                if (changed.isNotEmpty()) {
+                                    updateTimeline()
+                                    schedulePersist()
+                                }
+                                refresh()
+                            }
                         }
                     }
                 } catch (cancelled: CancellationException) {

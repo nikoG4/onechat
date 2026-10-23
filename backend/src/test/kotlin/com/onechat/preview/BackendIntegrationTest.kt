@@ -129,6 +129,30 @@ class BackendIntegrationTest {
                 ).body<List<MessageDto>>()
                 assertEquals(1, history.size)
                 assertEquals(posted.id, history.single().id)
+                assertNull(history.single().readAt)
+                val bobUnread = authorizedGet("/v1/conversations", bob.token)
+                    .body<List<ConversationDto>>().first { it.id == conversation.id }.unread
+                assertEquals(1, bobUnread)
+                assertEquals(0, authorizedGet("/v1/conversations", alice.token)
+                    .body<List<ConversationDto>>().first { it.id == conversation.id }.unread)
+                assertEquals(HttpStatusCode.Forbidden,
+                    client.post("/v1/conversations/" + conversation.id + "/read") {
+                        header(HttpHeaders.Authorization, "Bearer " + charlie.token)
+                    }.status)
+                val receiptResponse = client.post("/v1/conversations/" + conversation.id + "/read") {
+                    header(HttpHeaders.Authorization, "Bearer " + bob.token)
+                }
+                assertEquals(HttpStatusCode.OK, receiptResponse.status)
+                val receipt = receiptResponse.body<ReadReceiptDto>()
+                assertEquals(bob.user.id, receipt.readerId)
+                assertNotNull(authorizedGet("/v1/conversations/" + conversation.id + "/messages",
+                    alice.token).body<List<MessageDto>>().single().readAt)
+                assertEquals(0, authorizedGet("/v1/conversations", bob.token)
+                    .body<List<ConversationDto>>().first { it.id == conversation.id }.unread)
+                assertEquals(HttpStatusCode.OK,
+                    client.post("/v1/conversations/" + conversation.id + "/read") {
+                        header(HttpHeaders.Authorization, "Bearer " + bob.token)
+                    }.status)
                 assertEquals(0, authorizedGet(
                     "/v1/conversations/" + conversation.id + "/messages?beforeId=" + posted.id,
                     bob.token
@@ -185,7 +209,15 @@ class BackendIntegrationTest {
                     val event = Json.decodeFromString<MessageEvent>(frame.readText())
                     assertEquals("message.created", event.type)
                     assertEquals(chat.id, event.conversationId)
-                    assertEquals("Delivered via WebSocket", event.message.body)
+                    assertEquals("Delivered via WebSocket", event.message?.body)
+                    val acknowledged = client.post("/v1/conversations/" + chat.id + "/read") {
+                        header(HttpHeaders.Authorization, "Bearer " + b.token)
+                    }.body<ReadReceiptDto>()
+                    assertEquals(b.user.id, acknowledged.readerId)
+                    val receiptFrame = withTimeout(5_000L) { incoming.receive() as Frame.Text }
+                    val receiptEvent = Json.decodeFromString<MessageEvent>(receiptFrame.readText())
+                    assertEquals("conversation.read", receiptEvent.type)
+                    assertEquals(b.user.id, receiptEvent.receipt?.readerId)
                 }
             }
         }
