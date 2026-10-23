@@ -1,35 +1,31 @@
-# OneChat Maven Central integration: isolated verification
+# OneChat Kotlin Multiplatform client
 
-This folder is a **reference consumer**, not the missing `onechat-kmp` checkout.
-It deliberately uses published AdaptiveKT Maven Central **0.1.0-alpha01** and no
-project-level module dependencies, snapshots, mavenLocal or source checkout.
+This is the **connected OneChat preview client**, not an isolated AdaptiveKT sample.
 
-## CI
-`ci/onechat-maven-alpha01-smoke` triggers only its targeted workflow:
-- `compileKotlinDesktop`
-- `compileDebugKotlinAndroid`
-- `compileKotlinWasmJs`
-- `desktopTest` (JUnit)
-  
-## Domain implementation
-- `ChatEngine`: creates optimistic message and stable clientMessageId outbox entry,
-  merges WebSocket events and HTTP acknowledgement, queues offline messages, and
-  prevents stale HTTP history GETs from clearing new WebSocket gaps or a selection
-  change. The caller **must persist the state before performing I/O**, and restore
-  outbox/sequence after restart; this project does not claim durable storage.
-- `OneChatMavenWorkspace`: presentation only; Compose commonMain, AdaptiveKT controls,
-  desktop 30/70 list/detail, compact single-pane; callbacks need the genuine
-  OneChat ViewModels, repositories, and AppNavigator.
-- Legacy `OneChatMavenConsumer` remains as an independent alpha API smoke.
+**Backend:** `https://onechat-rl58.onrender.com` (Ktor, Neon PostgreSQL).
 
-## Not proven
-The original OneChat backend Ktor, JWT, PostgreSQL, browser history,
-cross-client WebSocket delivery, actual Android/Web browser runtime and Android
-device runtime are not here. Tests are pure JVM logic plus cross-platform compile,
-not end-to-end network or visual screenshot checks.
+## Run
 
-## Moving into real OneChat
-Copy only vetted, non-conflicting commonMain state/UI into the real repo and
-adapt to its existing DTOs. Do not replace authentication, navigator or session
-store. Wire to real HTTP and WebSocket adaptors, then test with two accounts.
-Run Gradle Android/Desktop/Wasm, Ktor tests and browser E2E on that checkout.
+- Android: `gradle -p client assembleDebug`; install `client/build/outputs/apk/debug/client-debug.apk`. The APK is also uploaded by GitHub Actions to each successful run.
+- Desktop: `gradle -p client run` (JDK 17).
+- WebAssembly: `gradle -p client compileKotlinWasmJs`. A browser build requires a frontend host and correct server CORS allowlist (`ONECHAT_ALLOWED_ORIGINS`); it is not yet published as a public web app.
+
+The application entry points are `MainActivity`, `DesktopMain` and `WebMain`. UI is `com.onechat.client.OneChatApp`, backed by `OneChatController` and `OneChatApi`.
+
+## Flows
+
+- Register (username, password, server invitation code) or log in.
+- Search another registered username and open/create direct conversation.
+- Browse conversations and recent message history.
+- Send messages with a stable client ID; reattempt the same message after uncertain HTTP failure without duplication.
+- Connect to the authenticated WebSocket using a single-use 60-second ticket and refresh history after reconnection.
+
+AdaptiveKT is consumed strictly as `io.github.nikog4.adaptivekt:adaptive-*:0.1.0-alpha01` from Maven Central. There are no source or composite-build dependencies on the AdaptiveKT repository.
+
+## Verification
+
+CI checks Android/Desktop/wasmJs compilation, builds the Android debug APK, executes pure message/outbox/reconnect tests and the HTTP contract tests using Ktor MockEngine.
+
+## Limitations
+
+Credentials and JWT are kept in memory only. Closing the app requires login again. No encrypted local persistence or durable outbox across process death, end-to-end encryption, media transfer, password recovery or push notifications. Browser deployment and end-to-end UI testing on physical devices are still pending.

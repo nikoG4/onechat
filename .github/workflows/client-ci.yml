@@ -1,4 +1,4 @@
-name: OneChat client - AdaptiveKT from Maven Central
+name: OneChat client - Android APK, Desktop, WebAssembly and API contract
 on:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ permissions:
 jobs:
   kmp-consumer:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -25,6 +25,19 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-      - name: Compile Kotlin Multiplatform Android Desktop Wasm and tests
+      - name: Verify API contract, UI targets and create Android APK
         run: |
-          gradle -p client compileKotlinDesktop compileDebugKotlinAndroid compileKotlinWasmJs desktopTest --console=plain --no-daemon --stacktrace
+          gradle -p client compileKotlinDesktop compileDebugKotlinAndroid compileKotlinWasmJs desktopTest assembleDebug --console=plain --no-daemon --stacktrace
+      - name: Upload Android preview APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OneChat-Android-debug-APK
+          path: client/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summary
+        if: always()
+        run: |
+          echo 'OneChat real Ktor client (Android, Desktop, wasmJs) and Maven Central AdaptiveKT.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Android APK published only when compilation and tests succeed.' >> "$GITHUB_STEP_SUMMARY"

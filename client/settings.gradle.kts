@@ -1,4 +1,4 @@
-rootProject.name = "onechat-maven-alpha01-consumer"
+rootProject.name = "onechat-client"
 pluginManagement {
     repositories {
         google()
