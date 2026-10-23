@@ -71,6 +71,7 @@ class ChatDatabase(config: PreviewConfig) : AutoCloseable {
                 )
                 """.trimIndent()
             )
+            s.executeUpdate("ALTER TABLE preview_messages ADD COLUMN IF NOT EXISTS read_at BIGINT")
             s.executeUpdate("CREATE INDEX IF NOT EXISTS idx_preview_member ON preview_members(user_id)")
             s.executeUpdate(
                 "CREATE INDEX IF NOT EXISTS idx_preview_timeline ON preview_messages(conversation_id, created_at DESC, id DESC)"
@@ -209,7 +210,10 @@ class ChatDatabase(config: PreviewConfig) : AutoCloseable {
             """
             SELECT c.id, u.id, u.username, c.created_at,
               (SELECT m.body FROM preview_messages m WHERE m.conversation_id=c.id
-               ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS preview
+               ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS preview,
+              (SELECT COUNT(*) FROM preview_messages unread
+               WHERE unread.conversation_id=c.id AND unread.sender_id<>?
+                 AND unread.read_at IS NULL) AS unread
             FROM preview_conversations c
             JOIN preview_members mine ON mine.conversation_id=c.id AND mine.user_id=?
             JOIN preview_members theirs ON theirs.conversation_id=c.id AND theirs.user_id<>?
@@ -222,6 +226,7 @@ class ChatDatabase(config: PreviewConfig) : AutoCloseable {
         ).use { p ->
             p.setString(1, userId)
             p.setString(2, userId)
+            p.setString(3, userId)
             p.executeQuery().use { rs ->
                 buildList {
                     while (rs.next()) add(ConversationDto(
@@ -229,6 +234,7 @@ class ChatDatabase(config: PreviewConfig) : AutoCloseable {
                         peer = UserDto(rs.getString(2), rs.getString(3)),
                         createdAt = rs.getLong(4),
                         preview = rs.getString(5),
+                        unread = rs.getInt(6),
                     ))
                 }
             }
@@ -242,6 +248,7 @@ class ChatDatabase(config: PreviewConfig) : AutoCloseable {
         clientMessageId = rs.getString(4),
         body = rs.getString(5),
         createdAt = rs.getLong(6),
+        readAt = rs.getLong(7).let { if (rs.wasNull()) null else it },
     )
 
     data class StoredMessage(val message: MessageDto, val created: Boolean)
@@ -266,7 +273,7 @@ class ChatDatabase(config: PreviewConfig) : AutoCloseable {
             }
             val item = c.prepareStatement(
                 """
-                SELECT id,conversation_id,sender_id,client_message_id,body,created_at
+                SELECT id,conversation_id,sender_id,client_message_id,body,created_at,read_at
                 FROM preview_messages WHERE sender_id=? AND client_message_id=?
                 """.trimIndent()
             ).use { p ->
@@ -293,13 +300,13 @@ class ChatDatabase(config: PreviewConfig) : AutoCloseable {
         }
         val sql = if (cutoff == null)
             """
-            SELECT id,conversation_id,sender_id,client_message_id,body,created_at
+            SELECT id,conversation_id,sender_id,client_message_id,body,created_at,read_at
             FROM preview_messages WHERE conversation_id=?
             ORDER BY created_at DESC,id DESC LIMIT ?
             """.trimIndent()
         else
             """
-            SELECT id,conversation_id,sender_id,client_message_id,body,created_at
+            SELECT id,conversation_id,sender_id,client_message_id,body,created_at,read_at
             FROM preview_messages
             WHERE conversation_id=? AND (created_at < ? OR (created_at = ? AND id < ?))
             ORDER BY created_at DESC,id DESC LIMIT ?
@@ -318,4 +325,24 @@ class ChatDatabase(config: PreviewConfig) : AutoCloseable {
             }
         }
     }
+    /**
+     * Marks only messages authored by the OTHER direct-chat member as read.
+     * Called only after authentication and conversation membership validation.
+     * A second identical call changes nothing and does not emit a duplicate event.
+     */
+    fun markRead(conversationId: String, readerId: String): ReadReceiptDto? = ds.connection.use { c ->
+        val now = System.currentTimeMillis()
+        c.prepareStatement(
+            "UPDATE preview_messages SET read_at=? WHERE conversation_id=? AND sender_id<>? " +
+                "AND read_at IS NULL RETURNING id"
+        ).use { p ->
+            p.setLong(1, now)
+            p.setString(2, conversationId)
+            p.setString(3, readerId)
+            p.executeQuery().use { rs ->
+                if (rs.next()) ReadReceiptDto(conversationId, readerId, now) else null
+            }
+        }
+    }
+
 }
