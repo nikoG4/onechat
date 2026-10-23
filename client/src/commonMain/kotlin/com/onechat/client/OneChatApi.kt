@@ -48,8 +48,10 @@ class OneChatApi(
         }
         install(WebSockets)
         install(HttpTimeout) {
-            requestTimeoutMillis = 25_000
-            connectTimeoutMillis = 15_000
+            // Render Free may need 30-60+ seconds to wake after idle.
+            requestTimeoutMillis = 120_000
+            connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 120_000
         }
         expectSuccess = false
     },
@@ -72,7 +74,8 @@ class OneChatApi(
         return response.body()
     }
 
-    suspend fun health(): Boolean = client.get(root + "/ready").status.isSuccess()
+    /** Unauthenticated external readiness check, does not create a user. */
+    suspend fun health(): Boolean = client.get(root + "/ready").status == HttpStatusCode.OK
 
     suspend fun register(username: String, password: String, invite: String): ApiAuth =
         read(client.post(root + "/v1/auth/register") {
