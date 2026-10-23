@@ -21,6 +21,7 @@ class OneChatController(
     private val api: OneChatApi,
     private val scope: CoroutineScope,
     private val localStore: ChatLocalStore = EphemeralChatStore(),
+    private val notifier: IncomingNotifier = IncomingNotifier { _, _, _ -> Unit },
 ) : AutoCloseable {
     var account by mutableStateOf<ApiUser?>(null)
         private set
@@ -430,6 +431,7 @@ class OneChatController(
                                         incomingNotice = IncomingNotice(
                                             message.conversationId, title, message.body.take(75),
                                         )
+                                        notifier.show(title, message.body.take(100), message.conversationId)
                                     }
                                 }
                                 refresh()
