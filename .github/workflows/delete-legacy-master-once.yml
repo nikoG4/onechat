@@ -1,0 +1,31 @@
+name: Delete retired legacy Spring branch once
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/delete-legacy-master-once.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  retire-old-master:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete only the old unprotected master branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "nikoG4/onechat"
+          test "$GITHUB_REF" = "refs/heads/main"
+          gh api 'repos/nikoG4/onechat/contents/backend/src/main/kotlin/com/onechat/preview/PreviewServer.kt?ref=main' --jq .sha >/dev/null
+          gh api 'repos/nikoG4/onechat/contents/client/src/commonMain/kotlin/com/onechat/chats/engine/ChatEngine.kt?ref=main' --jq .sha >/dev/null
+          if gh api 'repos/nikoG4/onechat/contents/back/pom.xml?ref=main' >/dev/null 2>&1; then
+            echo 'Old Spring still on main; refusing branch deletion'
+            exit 1
+          fi
+          gh api -X DELETE 'repos/nikoG4/onechat/git/refs/heads/master'
+          echo 'Removed retired Spring/Compose master branch; main is current OneChat.' >> "$GITHUB_STEP_SUMMARY"
