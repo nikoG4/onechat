@@ -29,6 +29,10 @@ class OneChatController(
         private set
     var authError by mutableStateOf<String?>(null)
         private set
+    var serverStatus by mutableStateOf<String?>(null)
+        private set
+    var serverBusy by mutableStateOf(false)
+        private set
     var newConversation by mutableStateOf(false)
         private set
     var recipientQuery by mutableStateOf("")
@@ -45,6 +49,28 @@ class OneChatController(
     private val cache = mutableMapOf<String, ApiMessage>()
     private val pending = mutableMapOf<String, MessageInput>()
 
+    /** A safe unauthenticated probe for diagnosing real network failures on the device. */
+    fun checkServer() {
+        if (serverBusy) return
+        serverBusy = true
+        serverStatus = "Comprobando conexión con Render y PostgreSQL…"
+        val expected = epoch
+        scope.launch {
+            try {
+                val ready = api.health()
+                if (epoch == expected) serverStatus = if (ready)
+                    "Servidor disponible: Render responde y PostgreSQL está accesible."
+                else "Render responde, pero el backend todavía no está listo (/ready no respondió 200)."
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                if (epoch == expected) serverStatus = safeMessage(e)
+            } finally {
+                if (epoch == expected) serverBusy = false
+            }
+        }
+    }
+
     fun authenticate(username: String, password: String, invite: String?, createAccount: Boolean) {
         if (authBusy) return
         if (username.isBlank() || password.isBlank()) {
@@ -53,6 +79,7 @@ class OneChatController(
         }
         authBusy = true
         authError = null
+        serverStatus = null
         val expected = ++epoch
         scope.launch {
             try {
@@ -88,6 +115,8 @@ class OneChatController(
         view = OneChatView()
         authError = null
         authBusy = false
+        serverBusy = false
+        serverStatus = null
     }
 
     fun refresh() {
@@ -300,5 +329,21 @@ private fun safeMessage(e: Exception): String = when (e) {
         429 -> "Demasiadas solicitudes; probá más tarde."
         else -> "Error del servidor (HTTP " + e.code + ")."
     }
-    else -> "No se pudo contactar al servidor. Comprobá tu conexión."
+    else -> {
+        // Differentiate timeout, TLS/DNS and JSON parsing instead of mislabeling all exceptions
+        // as network errors. Do not print request URLs, passwords or WebSocket tickets.
+        val kind = e::class.simpleName.orEmpty()
+        when {
+            kind.contains("Timeout", ignoreCase = true) ->
+                "Tiempo de espera agotado al conectar. Render Free podría estar despertando; volvé a intentar."
+            kind.contains("Serialization", ignoreCase = true) ||
+                kind.contains("JsonConvert", ignoreCase = true) ->
+                "El servidor devolvió una respuesta que la aplicación no pudo interpretar ($kind)."
+            kind.contains("SSL", ignoreCase = true) || kind.contains("Certificate", ignoreCase = true) ->
+                "Fallo TLS/HTTPS en este dispositivo ($kind)."
+            kind.contains("Host", ignoreCase = true) || kind.contains("DNS", ignoreCase = true) ->
+                "No se puede resolver el dominio de Render ($kind)."
+            else -> "No se pudo completar la solicitud ($kind). Probá el diagnóstico del servidor."
+        }
+    }
 }

@@ -1,0 +1,35 @@
+name: OneChat live Render signup transport smoke
+on:
+  pull_request:
+    paths: ['client/**', '.github/workflows/live-registration-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - name: Probe /ready through public HTTPS, allowing Render Free cold-start
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://onechat-rl58.onrender.com'
+          HTTP_CODE="$(curl -sS --connect-timeout 25 --max-time 150 --retry 2 --retry-delay 10 \
+            -o /tmp/onechat-ready -w '%{http_code}' "$BASE/ready")"
+          echo "GET /ready: HTTP $HTTP_CODE"
+          test "$HTTP_CODE" = 200
+          grep -Fxq ready /tmp/onechat-ready
+      - name: Probe signup route with deliberately invalid invite (must reject with 403)
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://onechat-rl58.onrender.com'
+          HTTP_CODE="$(curl -sS --connect-timeout 25 --max-time 150 \
+            -H 'Content-Type: application/json' -X POST \
+            -d '{"username":"SmokeProbeValidation","password":"not-a-real-login-123","inviteCode":"ci-test-intentionally-invalid"}' \
+            -o /tmp/onechat-signup -w '%{http_code}' "$BASE/v1/auth/register")"
+          echo "POST /v1/auth/register (invalid invite): HTTP $HTTP_CODE"
+          test "$HTTP_CODE" = 403
+          grep -Fq 'Invalid invite code' /tmp/onechat-signup
+          echo 'HTTPS Render, Neon readiness and invitation validation are responding.' >> "$GITHUB_STEP_SUMMARY"

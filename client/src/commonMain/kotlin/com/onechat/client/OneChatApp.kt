@@ -126,6 +126,20 @@ private fun AuthScreen(controller: OneChatController) {
             TextButton(onClick = { creating = !creating }) {
                 Text(if (creating) "Ya tengo una cuenta" else "Crear una cuenta con invitación")
             }
+            OutlinedButton(
+                onClick = controller::checkServer,
+                enabled = !controller.serverBusy && !controller.authBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (controller.serverBusy) "Verificando servidor…" else "Probar conexión con el servidor")
+            }
+            controller.serverStatus?.let { status ->
+                Text(
+                    status,
+                    style = MaterialTheme.typography.body2,
+                    color = MaterialTheme.colors.onSurface.copy(alpha = 0.75f),
+                )
+            }
             Text(
                 "Servidor: Render Free. La primera conexión después de inactividad puede tardar.",
                 style = MaterialTheme.typography.caption,
