@@ -1,6 +1,7 @@
 package com.onechat.client
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -78,6 +79,35 @@ fun OneChatApp() {
                     controller.newConversation -> NewConversationScreen(controller)
                     else -> Column(Modifier.fillMaxSize()) {
                         AppHeader(username = user.username, onSignOut = controller::signOut)
+                        controller.incomingNotice?.let { notice ->
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .background(AdaptiveTheme.colors.primarySubtle)
+                                    .clickable(onClick = controller::openNotice)
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                AdaptiveAvatar(name = notice.title, size = 36.dp)
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        "Nuevo mensaje de @" + notice.title,
+                                        color = AdaptiveTheme.colors.primaryText,
+                                        style = MaterialTheme.typography.subtitle2,
+                                    )
+                                    Text(
+                                        notice.preview, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = AdaptiveTheme.colors.textSecondary,
+                                        style = MaterialTheme.typography.caption,
+                                    )
+                                }
+                                AdaptiveIcons.ChevronRight(
+                                    size = 20.dp, tint = AdaptiveTheme.colors.primary,
+                                    contentDescription = "Abrir conversación",
+                                )
+                            }
+                        }
                         controller.storageWarning?.let { warning ->
                             Text(
                                 warning,
