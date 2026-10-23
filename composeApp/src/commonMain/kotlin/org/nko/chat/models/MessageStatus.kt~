@@ -1,4 +1,0 @@
-package org.nko.chat.models
-
-class MessageStatus {
-}
