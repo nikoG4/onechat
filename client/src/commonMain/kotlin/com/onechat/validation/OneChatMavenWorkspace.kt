@@ -314,7 +314,6 @@ private fun ChatDetail(
                         color = if (state.connection == ConnectionLabel.ONLINE)
                             AdaptiveTheme.colors.success else AdaptiveTheme.colors.textMuted,
                     )
-                }
                     }
                 }
                 StatusDot(state.connection)
