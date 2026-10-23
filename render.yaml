@@ -1,12 +1,15 @@
-# Zero-cost preview blueprint: backend on Render Free, PostgreSQL on Neon Free.
-# Connect a Neon database separately; never commit database credentials.
+# OneChat preview: Render Free Ktor server + external Neon Free PostgreSQL.
+# All secrets are entered in Render; do not commit credentials.
 services:
   - type: web
     name: onechat-preview-api
     runtime: docker
     plan: free
+    region: virginia
+    branch: main
     rootDir: backend
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /ready
     envVars:
       - key: ONECHAT_DATABASE_URL
@@ -16,7 +19,7 @@ services:
       - key: ONECHAT_DB_PASSWORD
         sync: false
       - key: ONECHAT_JWT_SECRET
-        sync: false
+        generateValue: true
       - key: ONECHAT_INVITE_CODE
         sync: false
       - key: ONECHAT_ALLOWED_ORIGINS
