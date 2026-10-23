@@ -94,6 +94,21 @@ private fun AuthScreen(controller: OneChatController) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (creating && password.isNotEmpty() && !SignupValidation.validPassword(password)) {
+                Text(
+                    "Contraseña demasiado corta: mínimo 8 bytes UTF-8 (máximo 72). " +
+                        "Ahora tiene " + SignupValidation.passwordBytes(password) + ".",
+                    color = MaterialTheme.colors.error,
+                    style = MaterialTheme.typography.caption,
+                )
+            }
+            if (creating && username.isNotBlank() && !SignupValidation.validUsername(username)) {
+                Text(
+                    "Usuario: entre 3 y 24 caracteres, empezando con una letra (A-Z).",
+                    color = MaterialTheme.colors.error,
+                    style = MaterialTheme.typography.caption,
+                )
+            }
             if (creating) {
                 OutlinedTextField(
                     value = invite,
@@ -115,8 +130,9 @@ private fun AuthScreen(controller: OneChatController) {
                 onClick = {
                     controller.authenticate(username, password, if (creating) invite else null, creating)
                 },
-                enabled = !controller.authBusy && username.isNotBlank() &&
-                    password.isNotBlank() && (!creating || invite.isNotBlank()),
+                enabled = !controller.authBusy &&
+                    if (creating) SignupValidation.error(username, password, invite) == null
+                    else username.isNotBlank() && password.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().height(48.dp),
             ) {
                 if (controller.authBusy) {
