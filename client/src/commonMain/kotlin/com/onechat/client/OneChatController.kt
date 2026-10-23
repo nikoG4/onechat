@@ -77,6 +77,12 @@ class OneChatController(
             authError = "Ingresá usuario y contraseña."
             return
         }
+        if (createAccount) {
+            SignupValidation.error(username, password, invite.orEmpty())?.let { problem ->
+                authError = problem
+                return
+            }
+        }
         authBusy = true
         authError = null
         serverStatus = null
@@ -322,6 +328,7 @@ class OneChatController(
 
 private fun safeMessage(e: Exception): String = when (e) {
     is OneChatHttpException -> when (e.code) {
+        400 -> "Registro inválido: el usuario debe tener 3-24 caracteres y la contraseña entre 8 y 72 bytes UTF-8."
         401 -> "Usuario o contraseña incorrectos, o sesión expirada."
         403 -> "Acceso denegado o código de invitación incorrecto."
         404 -> "Usuario o conversación inexistente."
