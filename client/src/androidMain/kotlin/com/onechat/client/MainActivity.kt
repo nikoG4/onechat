@@ -1,6 +1,9 @@
 package com.onechat.client
 
 import android.os.Bundle
+import android.content.res.Configuration
+import android.graphics.Color
+import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -19,7 +22,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Let Android draw edge-to-edge, then inset interactive content away from
         // cutouts/status bar, gesture navigation and the on-screen keyboard.
-        enableEdgeToEdge()
+        val dark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        val barStyle = if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
+        else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        enableEdgeToEdge(statusBarStyle = barStyle, navigationBarStyle = barStyle)
+        // The decor must have a matching fallback behind transparent system bars.
+        window.decorView.setBackgroundColor(if (dark) Color.rgb(11, 17, 32) else Color.rgb(248, 250, 252))
         setContent {
             AdaptiveTheme {
                 Box(
