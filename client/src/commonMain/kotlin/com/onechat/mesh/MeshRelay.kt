@@ -66,7 +66,7 @@ class MeshRelay(
         if (envelope.expiresAtMillis <= nowMillis) return MeshDecision.Drop(DropReason.EXPIRED)
 
         // Keep the deduplication cache bounded, even on a node with no disk.
-        val iter = seenUntil.iterator()
+        val iter = seenUntil.entries.iterator()
         while (iter.hasNext()) {
             if (iter.next().value <= nowMillis) iter.remove()
         }
